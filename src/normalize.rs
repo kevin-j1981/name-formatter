@@ -34,23 +34,106 @@ pub fn normalize_entry(raw: &str) -> Option<String> {
 
 /// Title-case a single word, treating '-' and '\'' as sub-word boundaries
 /// so "mary-jane" becomes "Mary-Jane" and "o'brien" becomes "O'Brien".
-/// Known gap: it can't tell "mcdonald" should become "McDonald" rather
-/// than "Mcdonald" without a name-specific exception list.
+/// The apostrophe boundary already gets O'Brien-style names right on its
+/// own. Mc/Mac surnames need a curated list instead: blindly capitalizing
+/// after any "mc"/"mac" prefix would turn "Mack" or "Macy" into "MacK" and
+/// "MacY", so we only apply the extra capital for names we actually know.
 fn title_case_word(word: &str) -> String {
     let mut result = String::with_capacity(word.len());
-    let mut capitalize_next = true;
+    let mut segment = String::new();
     for ch in word.chars() {
         if ch == '-' || ch == '\'' {
+            result.push_str(&case_segment(&segment));
+            segment.clear();
             result.push(ch);
-            capitalize_next = true;
-        } else if capitalize_next {
-            result.extend(ch.to_uppercase());
-            capitalize_next = false;
         } else {
-            result.extend(ch.to_lowercase());
+            segment.push(ch);
         }
     }
+    result.push_str(&case_segment(&segment));
     result
+}
+
+/// Known Mc/Mac surnames where the letter after the prefix should also be
+/// capitalized. Not exhaustive; anything not on this list falls back to
+/// plain title-casing (e.g. "mack" stays "Mack", not "MacK").
+const MC_MAC_SURNAMES: &[&str] = &[
+    "macarthur",
+    "macdonald",
+    "macdougall",
+    "macfarlane",
+    "macgregor",
+    "mackay",
+    "mackenzie",
+    "maclean",
+    "macleod",
+    "macmillan",
+    "macneil",
+    "macpherson",
+    "mctavish",
+    "mcallister",
+    "mccarthy",
+    "mcconnell",
+    "mccormick",
+    "mcdaniel",
+    "mcdonald",
+    "mcdougall",
+    "mcfadden",
+    "mcgee",
+    "mcgrath",
+    "mcgregor",
+    "mcguire",
+    "mcintosh",
+    "mcintyre",
+    "mckay",
+    "mckenzie",
+    "mclaughlin",
+    "mclean",
+    "mcleod",
+    "mcmahon",
+    "mcmillan",
+    "mcneil",
+    "mcpherson",
+];
+
+/// Title-case one sub-word (a run of letters between boundaries), applying
+/// the Mc/Mac exception when the whole sub-word matches a known surname.
+fn case_segment(segment: &str) -> String {
+    if segment.is_empty() {
+        return String::new();
+    }
+
+    let lower = segment.to_lowercase();
+    let prefix_len = if MC_MAC_SURNAMES.contains(&lower.as_str()) {
+        if lower.starts_with("mac") {
+            Some(3)
+        } else if lower.starts_with("mc") {
+            Some(2)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let chars: Vec<char> = lower.chars().collect();
+    match prefix_len {
+        Some(prefix_len) if chars.len() > prefix_len => {
+            let mut result = String::with_capacity(segment.len());
+            result.extend(chars[0].to_uppercase());
+            result.extend(&chars[1..prefix_len]);
+            result.extend(chars[prefix_len].to_uppercase());
+            result.extend(&chars[prefix_len + 1..]);
+            result
+        }
+        _ => {
+            let mut chars = lower.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        }
+    }
 }
 
 /// Reject entries that are clearly not names: empty strings, anything with
@@ -106,6 +189,22 @@ mod tests {
             normalize_entry("anne-marie"),
             Some("Anne-Marie".to_string())
         );
+    }
+
+    #[test]
+    fn title_cases_known_mc_and_mac_surnames() {
+        assert_eq!(normalize_entry("mcdonald"), Some("McDonald".to_string()));
+        assert_eq!(normalize_entry("MACKENZIE"), Some("MacKenzie".to_string()));
+        assert_eq!(
+            normalize_entry("mary mcguire"),
+            Some("Mary McGuire".to_string())
+        );
+    }
+
+    #[test]
+    fn leaves_unknown_mac_names_plain() {
+        assert_eq!(normalize_entry("mack"), Some("Mack".to_string()));
+        assert_eq!(normalize_entry("macy"), Some("Macy".to_string()));
     }
 
     #[test]

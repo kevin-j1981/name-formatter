@@ -53,10 +53,11 @@ building on top.
 
 ## Known limitations
 
-Title-casing is a simple algorithm (capitalize after spaces, hyphens, and
-apostrophes) with no dictionary of exceptions, so it doesn't know that
-"mcdonald" should become "McDonald" rather than "Mcdonald". See the roadmap
-for planned fixes.
+Title-casing capitalizes after spaces, hyphens, and apostrophes, and knows
+a curated list of common Mc/Mac surnames ("mcdonald" becomes "McDonald",
+"mackenzie" becomes "MacKenzie"). Anything not on that list falls back to
+plain title-casing, so an uncommon Mc/Mac surname will come out as e.g.
+"Mcintire" instead of "McIntire" until it's added to the list.
 
 ## License
 
