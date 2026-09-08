@@ -51,6 +51,12 @@ The output is one cleaned, deduplicated name per line, in the order each
 name first appeared, ready to be sampled from by whatever generator you're
 building on top.
 
+Pass `--sort` to get the output alphabetically (case-insensitive) instead:
+
+```
+./target/release/name-formatter --sort names.txt
+```
+
 ## Known limitations
 
 Title-casing capitalizes after spaces, hyphens, and apostrophes, and knows

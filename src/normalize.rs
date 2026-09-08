@@ -163,6 +163,14 @@ pub fn dedup_preserve_order(entries: Vec<String>) -> Vec<String> {
     out
 }
 
+/// Sort entries alphabetically, case-insensitively. Ties (entries equal
+/// except for case, which `dedup_preserve_order` wouldn't have let through
+/// anyway) fall back to a plain byte comparison so the sort is stable and
+/// deterministic regardless of input order.
+pub fn sort_entries(entries: &mut [String]) {
+    entries.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()).then_with(|| a.cmp(b)));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,6 +227,20 @@ mod tests {
         assert_eq!(
             dedup_preserve_order(input),
             vec!["Alice".to_string(), "Bob".to_string()]
+        );
+    }
+
+    #[test]
+    fn sorts_case_insensitively() {
+        let mut entries = vec![
+            "bob".to_string(),
+            "Alice".to_string(),
+            "carol".to_string(),
+        ];
+        sort_entries(&mut entries);
+        assert_eq!(
+            entries,
+            vec!["Alice".to_string(), "bob".to_string(), "carol".to_string()]
         );
     }
 }
