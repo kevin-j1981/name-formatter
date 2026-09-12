@@ -57,6 +57,19 @@ Pass `--sort` to get the output alphabetically (case-insensitive) instead:
 ./target/release/name-formatter --sort names.txt
 ```
 
+Pass `--sample N` to draw N random names instead of printing the whole
+cleaned list. Sampling is weighted by how often each name occurred in the
+source list before deduplication, so a name that showed up ten times in a
+scraped list is roughly ten times as likely to be picked as one that showed
+up once:
+
+```
+./target/release/name-formatter --sample 5 names.txt
+```
+
+Sampling is with replacement, so the same name can come up more than once in
+a single run, and each run draws a different random sequence.
+
 ## Known limitations
 
 Title-casing capitalizes after spaces, hyphens, and apostrophes, and knows

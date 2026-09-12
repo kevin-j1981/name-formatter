@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 /// Split a raw blob of messy input into candidate name entries.
 ///
@@ -148,19 +148,43 @@ pub fn is_plausible_name(entry: &str) -> bool {
         && entry.chars().any(|c| c.is_alphabetic())
 }
 
+/// Collapse duplicates (case-insensitive) into (name, occurrence count)
+/// pairs, keeping the first-seen casing and original order. The count is
+/// how many times that name showed up in the source list, which callers can
+/// use as a sampling weight: a name that appeared ten times in a scraped
+/// list is presumably more common than one that appeared once.
+pub fn count_entries(entries: Vec<String>) -> Vec<(String, usize)> {
+    let mut order: Vec<String> = Vec::new();
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    let mut first_form: HashMap<String, String> = HashMap::new();
+    for entry in entries {
+        let key = entry.to_lowercase();
+        match counts.get_mut(&key) {
+            Some(count) => *count += 1,
+            None => {
+                counts.insert(key.clone(), 1);
+                first_form.insert(key.clone(), entry);
+                order.push(key);
+            }
+        }
+    }
+    order
+        .into_iter()
+        .map(|key| {
+            let count = counts[&key];
+            (first_form.remove(&key).unwrap(), count)
+        })
+        .collect()
+}
+
 /// Remove duplicates (case-insensitive) while keeping the first-seen form
 /// and original order, since callers likely want a stable, reviewable list
 /// rather than one resorted alphabetically.
 pub fn dedup_preserve_order(entries: Vec<String>) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let mut out = Vec::with_capacity(entries.len());
-    for entry in entries {
-        let key = entry.to_lowercase();
-        if seen.insert(key) {
-            out.push(entry);
-        }
-    }
-    out
+    count_entries(entries)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect()
 }
 
 /// Sort entries alphabetically, case-insensitively. Ties (entries equal
@@ -219,6 +243,20 @@ mod tests {
     fn rejects_entries_with_digits() {
         assert!(!is_plausible_name("Agent007"));
         assert!(is_plausible_name("Jean-Paul"));
+    }
+
+    #[test]
+    fn counts_case_insensitive_occurrences() {
+        let input = vec![
+            "Alice".to_string(),
+            "Bob".to_string(),
+            "alice".to_string(),
+            "ALICE".to_string(),
+        ];
+        assert_eq!(
+            count_entries(input),
+            vec![("Alice".to_string(), 3), ("Bob".to_string(), 1)]
+        );
     }
 
     #[test]
