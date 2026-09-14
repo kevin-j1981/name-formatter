@@ -10,7 +10,7 @@ use normalize::{count_entries, is_plausible_name, normalize_entry, sort_entries,
 use sample::{weighted_sample, Rng};
 
 struct Options {
-    path: Option<String>,
+    paths: Vec<String>,
     sort: bool,
     sample: Option<usize>,
 }
@@ -26,7 +26,7 @@ fn main() -> ExitCode {
         }
     };
 
-    let raw = match read_input(opts.path.as_deref()) {
+    let raw = match read_input(&opts.paths) {
         Ok(raw) => raw,
         Err(err) => {
             eprintln!("error: {err}");
@@ -57,10 +57,11 @@ fn main() -> ExitCode {
 }
 
 /// Parse CLI arguments into options. Accepts an optional `--sort` flag and
-/// an optional `--sample N` flag (in any position) plus at most one
-/// positional argument: an input path, or "-"/omitted for stdin.
+/// an optional `--sample N` flag (in any position) plus any number of
+/// positional arguments: input paths, or "-" for stdin. With no positional
+/// arguments at all, input is read from stdin.
 fn parse_args(args: &[String]) -> Result<Options, String> {
-    let mut path = None;
+    let mut paths = Vec::new();
     let mut sort = false;
     let mut sample = None;
     let mut i = 0;
@@ -77,24 +78,41 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
                 sample = Some(count);
                 i += 1;
             }
-            other if path.is_none() => path = Some(other.to_string()),
-            other => return Err(format!("unexpected argument: {other}")),
+            other => paths.push(other.to_string()),
         }
         i += 1;
     }
-    Ok(Options { path, sort, sample })
+    Ok(Options { paths, sort, sample })
 }
 
-/// Read from the given path, or from stdin if no path (or "-") was given.
-fn read_input(path: Option<&str>) -> io::Result<String> {
-    match path {
-        None | Some("-") => {
-            let mut buf = String::new();
-            io::stdin().read_to_string(&mut buf)?;
-            Ok(buf)
-        }
-        Some(path) => fs::read_to_string(path),
+/// Read and concatenate input from each of the given paths, in order,
+/// joining pieces with a newline so entries from the end of one file don't
+/// fuse with entries at the start of the next. "-" reads stdin at that
+/// position. With no paths at all, read stdin once.
+fn read_input(paths: &[String]) -> Result<String, String> {
+    if paths.is_empty() {
+        return read_stdin().map_err(|err| err.to_string());
     }
+
+    let mut combined = String::new();
+    for path in paths {
+        let content = if path == "-" {
+            read_stdin().map_err(|err| err.to_string())?
+        } else {
+            fs::read_to_string(path).map_err(|err| format!("{path}: {err}"))?
+        };
+        if !combined.is_empty() && !combined.ends_with('\n') {
+            combined.push('\n');
+        }
+        combined.push_str(&content);
+    }
+    Ok(combined)
+}
+
+fn read_stdin() -> io::Result<String> {
+    let mut buf = String::new();
+    io::stdin().read_to_string(&mut buf)?;
+    Ok(buf)
 }
 
 /// Run the full normalization pipeline over raw text: split into entries,
@@ -128,24 +146,25 @@ mod tests {
     fn parses_sort_flag_in_any_position() {
         let opts = parse_args(&["--sort".to_string(), "names.txt".to_string()]).unwrap();
         assert!(opts.sort);
-        assert_eq!(opts.path.as_deref(), Some("names.txt"));
+        assert_eq!(opts.paths, vec!["names.txt".to_string()]);
 
         let opts = parse_args(&["names.txt".to_string(), "--sort".to_string()]).unwrap();
         assert!(opts.sort);
-        assert_eq!(opts.path.as_deref(), Some("names.txt"));
+        assert_eq!(opts.paths, vec!["names.txt".to_string()]);
     }
 
     #[test]
     fn parses_no_args_as_stdin_without_sort() {
         let opts = parse_args(&[]).unwrap();
         assert!(!opts.sort);
-        assert_eq!(opts.path, None);
+        assert!(opts.paths.is_empty());
         assert_eq!(opts.sample, None);
     }
 
     #[test]
-    fn rejects_a_second_positional_argument() {
-        assert!(parse_args(&["a.txt".to_string(), "b.txt".to_string()]).is_err());
+    fn parses_multiple_positional_arguments_as_paths() {
+        let opts = parse_args(&["a.txt".to_string(), "b.txt".to_string()]).unwrap();
+        assert_eq!(opts.paths, vec!["a.txt".to_string(), "b.txt".to_string()]);
     }
 
     #[test]
@@ -160,12 +179,42 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(opts.sample, Some(3));
-        assert_eq!(opts.path.as_deref(), Some("names.txt"));
+        assert_eq!(opts.paths, vec!["names.txt".to_string()]);
     }
 
     #[test]
     fn rejects_sample_without_a_number() {
         assert!(parse_args(&["--sample".to_string()]).is_err());
         assert!(parse_args(&["--sample".to_string(), "abc".to_string()]).is_err());
+    }
+
+    #[test]
+    fn reads_and_concatenates_multiple_files() {
+        let a = std::env::temp_dir().join(format!("name-formatter-test-a-{}", std::process::id()));
+        let b = std::env::temp_dir().join(format!("name-formatter-test-b-{}", std::process::id()));
+        fs::write(&a, "Alice\nBob").unwrap();
+        fs::write(&b, "Carol\n").unwrap();
+
+        let paths = vec![
+            a.to_str().unwrap().to_string(),
+            b.to_str().unwrap().to_string(),
+        ];
+        let raw = read_input(&paths).unwrap();
+
+        fs::remove_file(&a).unwrap();
+        fs::remove_file(&b).unwrap();
+
+        assert_eq!(raw, "Alice\nBob\nCarol\n");
+    }
+
+    #[test]
+    fn reports_which_file_is_missing() {
+        let missing = std::env::temp_dir().join(format!(
+            "name-formatter-test-missing-{}",
+            std::process::id()
+        ));
+        let path = missing.to_str().unwrap().to_string();
+        let err = read_input(&[path.clone()]).unwrap_err();
+        assert!(err.contains(&path));
     }
 }

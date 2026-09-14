@@ -51,6 +51,14 @@ The output is one cleaned, deduplicated name per line, in the order each
 name first appeared, ready to be sampled from by whatever generator you're
 building on top.
 
+Pass more than one path to merge several lists into one cleaned, deduplicated
+corpus, useful for combining a first-name file with a surname file or several
+scraped lists from different sources:
+
+```
+./target/release/name-formatter first-names.txt more-first-names.txt
+```
+
 Pass `--sort` to get the output alphabetically (case-insensitive) instead:
 
 ```
